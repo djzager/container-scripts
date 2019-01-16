@@ -6,7 +6,7 @@ ctr1=`buildah from ${1:-fedora}`
 buildah run $ctr1 -- dnf update -y
 buildah run $ctr1 -- dnf install -y python
 buildah run $ctr1 -- dnf clean all
-buildah run $ctr1 -- pip install ansible openshift
+buildah run $ctr1 -- pip install ansible openshift jmespath
 
 ## Run our server and expose the port
 buildah config --cmd "/usr/bin/ansible-playbook" $ctr1
