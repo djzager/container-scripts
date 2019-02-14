@@ -1,0 +1,7 @@
+[Unit]
+Description=redhat-ddns updater
+After=network.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/podman run --rm -v %h/.config/redhat-ddns:/etc/redhat-internal-ddns/hosts:z dzager/redhat-ddns

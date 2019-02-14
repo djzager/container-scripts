@@ -1,0 +1,9 @@
+[Unit]
+Description=redhat-ddns timer
+
+[Timer]
+OnBootSec=5m
+OnUnitInactiveSec=5m
+
+[Install]
+WantedBy=timers.target
