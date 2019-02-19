@@ -1,4 +1,8 @@
-#!/bin/bash -x
+#!/usr/bin/env bash
+set -e
+set -o pipefail
+
+TAG=${1:-$USER/redhat-ddns}
 
 ctr1=`buildah from ${1:-fedora}`
 
@@ -13,4 +17,5 @@ buildah run $ctr1 -- dnf clean all
 buildah config --entrypoint '["/usr/bin/redhat-internal-ddns-client.sh"]' $ctr1
 buildah config --cmd "update" $ctr1
 
-buildah commit $ctr1 ${2:-$USER/redhat-ddns}
+buildah commit $ctr1 ${TAG}
+buildah rm $ctr1

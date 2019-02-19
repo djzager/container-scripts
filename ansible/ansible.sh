@@ -1,15 +1,19 @@
-#!/bin/bash -x
+#!/usr/bin/env bash
+set -e
+set -o pipefail
 
-ctr1=`buildah from ${1:-fedora}`
+TAG=${1:-$USER/ansible}
 
-## Get all updates and install our Ansible
-buildah run $ctr1 -- dnf update -y
-buildah run $ctr1 -- dnf install -y python
-buildah run $ctr1 -- dnf clean all
-buildah run $ctr1 -- pip install ansible openshift jmespath
+ctr=`buildah from fedora`
+buildah run $ctr -- dnf update -y
+buildah run $ctr -- dnf install -y python
+buildah run $ctr -- dnf clean all
 
-## Run our server and expose the port
-buildah config --cmd "/usr/bin/ansible-playbook" $ctr1
+buildah run $ctr -- pip install ansible${ANSIBLE_VERSION:+==$ANSIBLE_VERSION} openshift jmespath
+buildah copy $ctr ansible.cfg /etc/ansible/ansible.cfg
+buildah config --entrypoint '[ "/usr/bin/ansible-playbook" ]' \
+               --workingdir "/opt/ansible/" $ctr
 
 ## Commit this container to an image name
-buildah commit $ctr1 ${2:-$USER/ansible}
+buildah commit $ctr ${TAG}${ANSIBLE_VERSION:+:$ANSIBLE_VERSION}
+buildah rm $ctr
