@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+DIR="$(dirname ${SCRIPT})"
+DEFAULT_TAG="${TAG:-$USER/hugo}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+install_hugo() {
+	local ctr=$1
+
+	buildah run $ctr -- dnf install -y hugo
+}
+
+build_hugo() {
+	local ctr=$1
+	local tag=${2:-$DEFAULT_TAG}
+	source "${DIR}/../fedora/fedora"
+	source "${DIR}/../vim/vim.sh"
+
+	container_from_fedora $ctr
+	install_vim $ctr
+	install_hugo $ctr
+	buildah run $ctr -- dnf clean all
+	buildah config --entrypoint '[ "/usr/bin/hugo" ]' --cmd 'help' $ctr
+	buildah commit $ctr $tag
+}
+
+run_hugo() {
+	podman run -it --rm \
+		--privileged \
+		--hostname toolbox \
+		--volume $PWD:$PWD \
+		--workdir $PWD \
+		${TAG:-$DEFAULT_TAG}
+}
+
+# If run as script
+if ! $(return >/dev/null 2>&1); then
+	case "$1" in
+		build)
+			ctr="hugo-working-container"
+			TAG="${TAG:-$DEFAULT_TAG}"
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_hugo $ctr $TAG
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			shift
+			run_hugo "$@"
+			;;
+
+	esac
+fi

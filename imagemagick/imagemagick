@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
 DIR="$(dirname ${SCRIPT})"
 __IMAGEMAGICK__="${TAG:-$USER/imagemagick}"
 
