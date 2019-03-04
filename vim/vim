@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+DIR="$(dirname ${SCRIPT})"
+__VIM__="${TAG:-$USER/vim}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+install_vim() {
+	local ctr=$1
+
+	buildah run $ctr -- dnf install -y vim
+	buildah copy $ctr $XDG_CONFIG_HOME/vim /root/.vim
+	buildah run $ctr -- vim +PlugInstall +qall
+}
+
+build_vim() {
+	set -x
+	local ctr=$1
+	local tag=${2:-$__VIM__}
+	source "${DIR}/../fedora/fedora"
+
+	container_from_fedora $ctr
+	install_vim $ctr
+	buildah run $ctr -- dnf clean all
+	buildah config --entrypoint '[ "/usr/bin/vim" ]' $ctr
+	buildah commit $ctr $tag
+}
+
+run_vim() {
+	if [ $# -ge 1 ]; then
+		if [ $# -gt 1 ]; then
+			echo "Can't handle multiple files yet"
+			exit 1
+		fi
+
+		dir=$( cd "$(dirname $1)" ; pwd -P )
+		base=$(basename $1)
+		if [[ "$dir" =~ "$PWD" ]]; then
+			dir=$PWD
+			base=$1
+		fi
+		podman run -it --rm \
+			--privileged \
+			--volume $dir:$dir:rslave \
+			--workdir $dir \
+			${__VIM__} -- "$dir/$base"
+	else
+		podman run -it --rm \
+			--privileged \
+			--volume $PWD:$PWD:rslave \
+			--workdir $PWD \
+			${__VIM__}
+	fi
+}
+
+# If run as script
+if ! $(return >/dev/null 2>&1); then
+	case "$1" in
+		build)
+			ctr="vim-working-container"
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_vim $ctr $__VIM__
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			if ! buildah images ${__VIM__} >/dev/null 2>&1; then
+				echo "Vim image does not exist, building..."
+				$0 build
+			fi
+			run_vim "$@"
+			;;
+
+	esac
+fi

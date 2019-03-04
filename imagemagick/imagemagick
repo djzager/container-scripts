@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+DIR="$(dirname ${SCRIPT})"
+__IMAGEMAGICK__="${TAG:-$USER/imagemagick}"
+
+install_imagemagick() {
+	local ctr=$1
+
+	buildah run $ctr -- dnf install -y ImageMagick
+}
+
+build_imagemagick() {
+	set -x
+	local ctr=$1
+	local tag=${2:-$__IMAGEMAGICK__}
+	source "${DIR}/../fedora/fedora"
+
+	container_from_fedora $ctr
+	install_imagemagick $ctr
+	buildah run $ctr -- dnf clean all
+	buildah config --entrypoint '[ "/usr/bin/convert" ]' $ctr
+	buildah commit $ctr $tag
+}
+
+run_imagemagick() {
+	podman run -it --rm \
+		--privileged \
+		--volume $PWD:$PWD \
+		--workdir $PWD \
+		${__IMAGEMAGICK__} -- "$@"
+}
+
+# If run as script
+if ! $(return >/dev/null 2>&1); then
+	ctr="imagemagick-working-container"
+
+	case "$1" in
+		build)
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_imagemagick $ctr ${__IMAGEMAGICK__}
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			if ! buildah images ${__IMAGEMAGICK__} >/dev/null 2>&1; then
+				echo "Image magick image does not exist, building..."
+				$0 build
+			fi
+			run_imagemagick "$@"
+			;;
+
+	esac
+fi

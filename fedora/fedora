@@ -3,6 +3,20 @@ set -e
 set -o pipefail
 
 DEFAULT_TAG="${USER}/fedora"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+install_zsh() {
+	local ctr=$1
+	buildah run $ctr -- dnf install -y zsh git fzf ripgrep
+	buildah copy $ctr $XDG_CONFIG_HOME/zsh /root/.config/zsh
+	buildah config \
+		--cmd "" \
+		--entrypoint '[ "/usr/bin/zsh" ]' \
+		--env ZDOTDIR="/root/.config/zsh" \
+		--env FZF_DEFAULT_COMMAND='rg --files --no-ignore --hidden --follow -g "!{.git,node_modules}/*" 2> /dev/null' \
+		--label maintainer="David Zager <david.j.zager@gmail.com>" \
+		$ctr
+}
 
 build_fedora() {
 	local ctr=$1
@@ -10,9 +24,7 @@ build_fedora() {
 
 	buildah from --name $ctr --pull-always fedora
 	buildah run $ctr -- dnf update -y
-	buildah config --label maintainer="David Zager <david.j.zager@gmail.com>" $ctr
-	# We don't want to inherit cmd from fedora
-	buildah config --cmd "" $ctr
+	install_zsh $ctr
 	buildah commit $ctr $tag
 }
 
