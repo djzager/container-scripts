@@ -28,30 +28,17 @@ build_vim() {
 }
 
 run_vim() {
-	if [ $# -ge 1 ]; then
-		if [ $# -gt 1 ]; then
-			echo "Can't handle multiple files yet"
-			exit 1
-		fi
+	# Right now vim will only work with things at or below the
+	# current working directory
+	local args=(
+		-it
+		--rm
+		--privileged
+		--volume $PWD:$PWD:rslave
+		--workdir $PWD
+	)
 
-		dir=$( cd "$(dirname $1)" ; pwd -P )
-		base=$(basename $1)
-		if [[ "$dir" =~ "$PWD" ]]; then
-			dir=$PWD
-			base=$1
-		fi
-		podman run -it --rm \
-			--privileged \
-			--volume $dir:$dir:rslave \
-			--workdir $dir \
-			${__VIM__} -- "$dir/$base"
-	else
-		podman run -it --rm \
-			--privileged \
-			--volume $PWD:$PWD:rslave \
-			--workdir $PWD \
-			${__VIM__}
-	fi
+	podman run "${args[@]}" ${__VIM__} "$@"
 }
 
 # If run as script

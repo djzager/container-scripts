@@ -3,7 +3,6 @@ set -eo pipefail
 
 SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
 DIR="$(dirname ${SCRIPT})"
-# TODO: Maybe this should be called ansible-playbook
 __ANSIBLE__="${TAG:-$USER/ansible}"
 
 install_ansible() {
@@ -18,26 +17,36 @@ install_ansible() {
 build_ansible() {
 	set -x
 	local ctr=$1
-	local tag=${2:-$__ANSIBLE__}
+	local tag=${2:-${__ANSIBLE__}}
 	source "${DIR}/../fedora/fedora"
 
 	container_from_fedora $ctr
 	install_ansible $ctr
-	buildah config --entrypoint '[ "/usr/bin/ansible-playbook" ]' \
-		       --workingdir "/opt/ansible/" $ctr
+	buildah config \
+		--entrypoint '[ "/usr/bin/ansible" ]' \
+		--workingdir "/opt/ansible/" \
+		$ctr
 	buildah commit $ctr $tag
 }
 
 run_ansible() {
-	KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
+	local exec="$(basename "${BASH_SOURCE[0]}")"
+	local args=(
+		-it
+		--rm
+		--privileged
+		--net host
+		--volume ${PWD}:${PWD}:rslave
+		--workdir $PWD
+		--entrypoint "/usr/bin/${exec}"
+	)
 
-	# TODO: Fix this
-	podman run -it --rm \
-		--privileged \
-		--net=host \
-		--volume $PWD:$PWD \
-		--workdir $PWD \
-		${__ANSIBLE__} -- "$@"
+	KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
+	if [ -f "$KUBECONFIG" ]; then
+		args+=( --env $KUBECONFIG --volume $KUBECONFIG:/root/.kube/config )
+	fi
+
+	podman run "${args[@]}" ${__ANSIBLE__} "$@"
 }
 
 # If run as script
@@ -46,7 +55,7 @@ if ! $(return >/dev/null 2>&1); then
 		build)
 			ctr="ansible-working-container"
 			buildah rm $ctr >/dev/null 2>&1 || true
-			build_ansible $ctr $__ANSIBLE__
+			build_ansible $ctr ${__ANSIBLE__}
 			buildah rm $ctr >/dev/null 2>&1
 			;;
 

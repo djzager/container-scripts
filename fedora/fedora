@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
-set -e
-set -o pipefail
+set -eo pipefail
 
-DEFAULT_TAG="${USER}/fedora"
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+__FEDORA__="${USER}/fedora"
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 install_zsh() {
 	local ctr=$1
-	buildah run $ctr -- dnf install -y zsh git fzf ripgrep
+	buildah run $ctr -- dnf install -y zsh git fzf ripgrep tmux
 	buildah copy $ctr $XDG_CONFIG_HOME/zsh /root/.config/zsh
 	buildah config \
 		--cmd "" \
 		--entrypoint '[ "/usr/bin/zsh" ]' \
 		--env ZDOTDIR="/root/.config/zsh" \
-		--env FZF_DEFAULT_COMMAND='rg --files --no-ignore --hidden --follow -g "!{.git,node_modules}/*" 2> /dev/null' \
+		--env FZF_DEFAULT_COMMAND='rg --files --no-ignore --hidden --follow --glob !.git 2> /dev/null' \
 		--label maintainer="David Zager <david.j.zager@gmail.com>" \
 		$ctr
 }
 
 build_fedora() {
+	set -x
 	local ctr=$1
-	local tag="${2:-$DEFAULT_TAG}"
+	local tag="${2:-${__FEDORA__}}"
 
 	buildah from --name $ctr --pull-always fedora
 	buildah run $ctr -- dnf update -y
@@ -30,7 +31,7 @@ build_fedora() {
 
 container_from_fedora() {
 	local ctr=$1
-	local tag="${2:-$DEFAULT_TAG}"
+	local tag="${2:-${__FEDORA__}}"
 
 	if buildah images $tag >/dev/null 2>&1; then
 		buildah from --name $ctr $tag
@@ -39,11 +40,43 @@ container_from_fedora() {
 	fi
 }
 
-# If run as script, then build it
+run_fedora() {
+	local exec="$(basename "${BASH_SOURCE[0]}")"
+	local args=(
+		-it
+		--rm
+		--hostname toolbox
+		--privileged
+		--net host
+		--volume ${PWD}:${PWD}:rslave
+		--workdir $PWD
+	)
+
+	KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
+	if [ -f "$KUBECONFIG" ]; then
+		args+=( --env $KUBECONFIG --volume $KUBECONFIG:/root/.kube/config )
+	fi
+
+	podman run "${args[@]}" ${__FEDORA__} "$@"
+}
+
+# If run as script
 if ! $(return >/dev/null 2>&1); then
-	ctr="fedora-working-container"
-	TAG="${TAG:-$DEFAULT_TAG}"
-	buildah rm $ctr >/dev/null 2>&1 || true
-	build_fedora $ctr $TAG
-	buildah rm $ctr >/dev/null 2>&1
+	case "$1" in
+		build)
+			ctr="fedora-working-container"
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_fedora $ctr ${__FEDORA__}
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			if ! buildah images ${__FEDORA__} >/dev/null 2>&1; then
+				echo "Fedora image does not exist, building..."
+				$SCRIPT build
+			fi
+			run_fedora "$@"
+			;;
+
+	esac
 fi
