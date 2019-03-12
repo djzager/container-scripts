@@ -3,20 +3,22 @@ set -eo pipefail
 
 SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
 DIR="$(dirname ${SCRIPT})"
-DEFAULT_TAG="${TAG:-$USER/hugo}"
+__HUGO__="${TAG:-$USER/hugo}"
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 install_hugo() {
 	local ctr=$1
 
-	buildah run $ctr -- dnf install -y hugo
+	buildah run $ctr -- curl -Lo hugo.tar.gz https://github.com/gohugoio/hugo/releases/download/v0.54.0/hugo_0.54.0_Linux-64bit.tar.gz
+	buildah run $ctr -- tar -xvf hugo.tar.gz
+	buildah run $ctr -- mv hugo /usr/bin/hugo
 }
 
 build_hugo() {
 	local ctr=$1
-	local tag=${2:-$DEFAULT_TAG}
+	local tag=${2:-$__HUGO__}
 	source "${DIR}/../fedora/fedora"
-	source "${DIR}/../vim/vim.sh"
+	source "${DIR}/../vim/vim"
 
 	container_from_fedora $ctr
 	install_vim $ctr
@@ -27,12 +29,17 @@ build_hugo() {
 }
 
 run_hugo() {
-	podman run -it --rm \
-		--privileged \
-		--hostname toolbox \
-		--volume $PWD:$PWD \
-		--workdir $PWD \
-		${TAG:-$DEFAULT_TAG}
+	local args=(
+		--rm
+		--interactive
+		--tty
+		--privileged
+		--net host
+		--volume $PWD:$PWD:rslave
+		--workdir $PWD
+	)
+
+	podman run "${args[@]}" ${__HUGO__} "$@"
 }
 
 # If run as script
@@ -40,14 +47,17 @@ if ! $(return >/dev/null 2>&1); then
 	case "$1" in
 		build)
 			ctr="hugo-working-container"
-			TAG="${TAG:-$DEFAULT_TAG}"
+			TAG="${TAG:-$__HUGO__}"
 			buildah rm $ctr >/dev/null 2>&1 || true
 			build_hugo $ctr $TAG
 			buildah rm $ctr >/dev/null 2>&1
 			;;
 
 		*)
-			shift
+			if ! buildah images ${__HUGO__} >/dev/null 2>&1; then
+				echo "Hugo image does not exist, building..."
+				$SCRIPT build
+			fi
 			run_hugo "$@"
 			;;
 

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+DIR="$(dirname ${SCRIPT})"
+__AWS__="${TAG:-$USER/aws}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+install_aws() {
+	local ctr=$1
+
+	buildah run $ctr -- dnf install -y awscli
+	buildah run $ctr -- dnf clean all
+}
+
+build_aws() {
+	set -x
+	local ctr=$1
+	local tag=${2:-$__AWS__}
+	source "${DIR}/../fedora/fedora"
+
+	container_from_fedora $ctr
+	install_aws $ctr
+	buildah config \
+		--entrypoint '[ "/usr/bin/aws" ]' \
+		$ctr
+	buildah commit $ctr $tag
+}
+
+run_aws() {
+	# TODO: Modify arguments
+	local args=(
+		--rm
+		--interactive
+		--tty
+		--privileged
+		--net=host
+		--volume $XDG_CONFIG_HOME/aws:/root/.aws:rw
+		--env $AWS_PROFILE
+	)
+	# TODO: Update Me!!
+	podman run "${args[@]}" ${__AWS__} "$@"
+}
+
+# If run as script
+# https://stackoverflow.com/questions/2683279/how-to-detect-if-a-script-is-being-sourced
+if ! $(return >/dev/null 2>&1); then
+	case "$1" in
+		build)
+			ctr="aws-working-container"
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_aws $ctr $__AWS__
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			if ! buildah images $__AWS__ >/dev/null 2>&1; then
+				echo "aws image does not exist, building..."
+				$SCRIPT build
+			fi
+			run_aws "$@"
+			;;
+
+	esac
+fi

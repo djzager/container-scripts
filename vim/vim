@@ -31,8 +31,9 @@ run_vim() {
 	# Right now vim will only work with things at or below the
 	# current working directory
 	local args=(
-		-it
 		--rm
+		--interactive
+		--tty
 		--privileged
 		--volume $PWD:$PWD:rslave
 		--workdir $PWD
@@ -54,10 +55,11 @@ if ! $(return >/dev/null 2>&1); then
 		*)
 			if ! buildah images ${__VIM__} >/dev/null 2>&1; then
 				echo "Vim image does not exist, building..."
-				$0 build
+				$SCRIPT build
 			fi
 			run_vim "$@"
 			;;
 
 	esac
 fi
+

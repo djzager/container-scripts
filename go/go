@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+DIR="$(dirname ${SCRIPT})"
+__GO__="${TAG:-$USER/go}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+install_go() {
+	local ctr=$1
+
+	buildah run $ctr -- dnf install -y go
+	buildah run $ctr -- mkdir -p /root/go/bin
+	buildah run $ctr -- sh -c 'curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh'
+	buildah run $ctr -- sh -c 'export PATH=$PATH:/root/go/bin && curl https://glide.sh/get | sh'
+	buildah config \
+		--env GOROOT=/usr/lib/golang \
+		--env GOPATH=/root/go \
+		--env GOBIN=/root/go/bin \
+		$ctr
+	# TODO: Configuration here
+	buildah run $ctr -- dnf clean all
+}
+
+build_go() {
+	set -x
+	local ctr=$1
+	local tag=${2:-$__GO__}
+	source "${DIR}/../fedora/fedora"
+	source "${DIR}/../vim/vim"
+
+	container_from_fedora $ctr
+	install_vim $ctr
+	install_go $ctr
+	buildah commit $ctr $tag
+}
+
+run_go() {
+	local cmd="$(basename $0)"
+	local pwd="${PWD##*/}"
+	local go_dir="/root/go/src/github.com/${pwd/./\/}"
+	local args=(
+		-it
+		--rm
+		--privileged
+		--net=host
+		--volume ${PWD}:${go_dir}:rslave
+		--volume ${HOME}/.ssh:/root/.ssh:ro
+		--workdir $go_dir
+	)
+
+	if [[ "$cmd" == "go" ]]; then
+		args+=( --entrypoint "/usr/bin/go" )
+	else
+		args+=( --entrypoint "/root/go/bin/$cmd" )
+	fi
+
+		# --entrypoint "/usr/bin/$cmd"
+	podman run "${args[@]}" ${__GO__} "$@"
+}
+
+# If run as script
+# https://stackoverflow.com/questions/2683279/how-to-detect-if-a-script-is-being-sourced
+if ! $(return >/dev/null 2>&1); then
+	case "$1" in
+		build)
+			ctr="go-working-container"
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_go $ctr $__GO__
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			if ! buildah images $__GO__ >/dev/null 2>&1; then
+				echo "go image does not exist, building..."
+				$SCRIPT build
+			fi
+			run_go "$@"
+			;;
+
+	esac
+fi
