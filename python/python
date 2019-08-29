@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+DIR="$(dirname ${SCRIPT})"
+__PYTHON__="${TAG:-$USER/python}"
+
+install_python() {
+	local ctr=$1
+
+	buildah run $ctr -- dnf install -y python python3
+	buildah run $ctr -- dnf clean all
+	buildah run $ctr -- pip install openshift jmespath
+}
+
+build_python() {
+	set -x
+	local ctr=$1
+	local tag=${2:-${__PYTHON__}}
+	source "${DIR}/../fedora/fedora"
+
+	container_from_fedora $ctr
+	install_python $ctr
+	buildah config \
+		--entrypoint '[ "/usr/bin/python", "-W" ]' \
+		--workingdir "/opt/python/" \
+		$ctr
+	buildah commit $ctr $tag
+}
+
+run_python() {
+	local exec="$(basename "${BASH_SOURCE[0]}")"
+	local args=(
+		-it
+		--rm
+		--privileged
+		--net host
+		--volume ${PWD}:${PWD}:rslave
+		--workdir $PWD
+		--entrypoint "/usr/bin/${exec}"
+	)
+
+	KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
+	if [ -f "$KUBECONFIG" ]; then
+		args+=( --env $KUBECONFIG --volume $KUBECONFIG:/root/.kube/config )
+	fi
+
+	podman run "${args[@]}" ${__PYTHON__} "$@"
+}
+
+# If run as script
+if ! $(return >/dev/null 2>&1); then
+	case "$1" in
+		build)
+			ctr="python-working-container"
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_python $ctr ${__PYTHON__}
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			if ! buildah images ${__PYTHON__} >/dev/null 2>&1; then
+				echo "Python image does not exist, building..."
+				$SCRIPT build
+			fi
+			run_python "$@"
+			;;
+
+	esac
+fi

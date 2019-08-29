@@ -1,0 +1,18 @@
+---
+- hosts: localhost
+  tasks:
+    - name: Assert
+      assert:
+        that: "name is defined"
+        fail_msg: Must define the name to template
+
+    - name: Create the dir
+      file:
+        path: "{{ name }}"
+        state: directory
+
+    - name: Template out the file
+      template:
+        src: script_template.j2
+        dest: "{{ name }}/{{ name }}"
+        mode: 0744

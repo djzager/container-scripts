@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+DIR="$(dirname ${SCRIPT})"
+__{{ name | upper }}__="${TAG:-$USER/{{ name }}}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+install_{{ name }}() {
+	local ctr=$1
+
+	buildah run $ctr -- dnf install -y {{ name }}
+	# TODO: Configuration here
+	buildah run $ctr -- dnf clean all
+}
+
+build_{{ name }}() {
+	set -x
+	local ctr=$1
+	local tag=${2:-$__{{ name | upper }}__}
+	source "${DIR}/../fedora/fedora"
+
+	container_from_fedora $ctr
+	install_{{ name }} $ctr
+	# TODO: Container configuration here
+	buildah config \
+		--entrypoint '[ "/usr/bin/{{ name }}" ]' \
+		$ctr
+	buildah commit $ctr $tag
+}
+
+run_{{ name }}() {
+	# exec is useful if you want to run multiple commands from same image
+	local exec="$(basename "${BASH_SOURCE[0]}")"
+	# TODO: Modify arguments
+	local args=(
+		-it
+		--rm
+		--privileged
+		--net=host
+		--volume ${PWD}:${PWD}:rslave
+		--workdir $PWD
+		--entrypoint "/usr/bin/${exec}"
+	)
+	# TODO: Update Me!!
+	podman run "${args[@]}" ${__{{ name | upper }}__} "$@"
+}
+
+# If run as script
+# https://stackoverflow.com/questions/2683279/how-to-detect-if-a-script-is-being-sourced
+if ! $(return >/dev/null 2>&1); then
+	case "$1" in
+		build)
+			ctr="{{ name }}-working-container"
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_{{ name }} $ctr $__{{ name | upper }}__
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			if ! buildah images $__{{ name | upper }}__ >/dev/null 2>&1; then
+				echo "{{ name }} image does not exist, building..."
+				$SCRIPT build
+			fi
+			run_{{ name }} "$@"
+			;;
+
+	esac
+fi

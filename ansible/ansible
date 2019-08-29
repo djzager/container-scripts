@@ -49,6 +49,26 @@ run_ansible() {
 	podman run "${args[@]}" ${__ANSIBLE__} "$@"
 }
 
+run_python() {
+	local exec="$(basename "${BASH_SOURCE[0]}")"
+	local args=(
+		-it
+		--rm
+		--privileged
+		--net host
+		--volume ${PWD}:${PWD}:rslave
+		--workdir $PWD
+		--entrypoint "/usr/bin/${exec}"
+	)
+
+	KUBECONFIG=${KUBECONFIG:-$HOME/.kube/config}
+	if [ -f "$KUBECONFIG" ]; then
+		args+=( --env $KUBECONFIG --volume $KUBECONFIG:/root/.kube/config )
+	fi
+
+	podman run "${args[@]}" ${__ANSIBLE__} "$@"
+}
+
 # If run as script
 if ! $(return >/dev/null 2>&1); then
 	case "$1" in

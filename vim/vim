@@ -9,9 +9,7 @@ XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 install_vim() {
 	local ctr=$1
 
-	buildah run $ctr -- dnf install -y vim
-	buildah copy $ctr $XDG_CONFIG_HOME/vim /root/.vim
-	buildah run $ctr -- vim +PlugInstall +qall
+	buildah run $ctr -- dnf install -y vim go
 }
 
 build_vim() {
@@ -35,6 +33,7 @@ run_vim() {
 		--interactive
 		--tty
 		--privileged
+		--volume $XDG_CONFIG_HOME/vim:/root/.vim:rw
 		--volume $PWD:$PWD:rslave
 		--workdir $PWD
 	)

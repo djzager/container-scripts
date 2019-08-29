@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+DIR="$(dirname ${SCRIPT})"
+__COURIER__="${TAG:-$USER/operator-courier}"
+
+install_courier() {
+	local ctr=$1
+	buildah run $ctr -- pip3 install operator-courier
+}
+
+build_courier() {
+	set -x
+	local ctr=$1
+	local tag=${2:-${__COURIER__}}
+	source "${DIR}/../fedora/fedora"
+	source "${DIR}/../python/python"
+
+	container_from_fedora $ctr
+	install_python $ctr
+	install_courier $ctr
+	# buildah config \
+	# 	--entrypoint '[ "operator-courier" ]' \
+	# 	$ctr
+	buildah commit $ctr $tag
+}
+
+run_courier() {
+	local exec="$(basename "${BASH_SOURCE[0]}")"
+	local args=(
+		-it
+		--rm
+		--privileged
+		--net host
+		--volume ${PWD}:${PWD}:rslave
+		--workdir $PWD
+		--entrypoint "/usr/local/bin/${exec}"
+	)
+
+	podman run "${args[@]}" ${__COURIER__} "$@"
+}
+
+# If run as script
+if ! $(return >/dev/null 2>&1); then
+	case "$1" in
+		build)
+			ctr="courier-working-container"
+			buildah rm $ctr >/dev/null 2>&1 || true
+			build_courier $ctr ${__COURIER__}
+			buildah rm $ctr >/dev/null 2>&1
+			;;
+
+		*)
+			if ! buildah images ${__COURIER__} >/dev/null 2>&1; then
+				echo "Courier image does not exist, building..."
+				$SCRIPT build
+			fi
+			run_courier "$@"
+			;;
+
+	esac
+fi
